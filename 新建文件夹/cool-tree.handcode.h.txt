@@ -1,0 +1,14 @@
+#ifndef COOL_TREE_HANDCODE_H
+#define COOL_TREE_HANDCODE_H
+
+#define NO_EXPR ((Expression_class*)0)
+
+#ifdef DEBUG
+#define debug_msg(msg) std::cerr << msg << std::endl
+#else
+#define debug_msg(msg)
+#endif
+
+#define CHECK_TYPE(ptr, type) dynamic_cast<type*>(ptr)
+
+#endif

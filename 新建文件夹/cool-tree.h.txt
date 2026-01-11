@@ -1,0 +1,61 @@
+#ifndef _COOL_TREE_H
+#define _COOL_TREE_H
+
+#include <iostream>
+#include <vector>
+#include <string>
+
+class tree_node {
+public:
+    int line_number;
+    tree_node() : line_number(0) {}
+    virtual ~tree_node() {}
+};
+
+class Expression_class : public tree_node {
+public:
+    virtual void code(std::ostream& s) = 0;
+};
+
+class Feature_class : public tree_node {
+public:
+    virtual void code(std::ostream& s) = 0;
+};
+
+class class__class : public tree_node {
+public:
+    std::string name;
+    std::string parent;
+    std::vector<Feature_class*> features;
+    
+    class__class(const std::string& n, const std::string& p, 
+                 const std::vector<Feature_class*>& f)
+        : name(n), parent(p), features(f) {}
+    
+    void code(std::ostream& s);
+};
+
+class program_class : public tree_node {
+public:
+    std::vector<class__class*> classes;
+    
+    program_class(const std::vector<class__class*>& c) : classes(c) {}
+    
+    void code(std::ostream& s);
+};
+
+class int_const_class : public Expression_class {
+    int val;
+public:
+    int_const_class(int v) : val(v) {}
+    void code(std::ostream& s) override;
+};
+
+class plus_class : public Expression_class {
+    Expression_class *e1, *e2;
+public:
+    plus_class(Expression_class *a, Expression_class *b) : e1(a), e2(b) {}
+    void code(std::ostream& s) override;
+};
+
+#endif

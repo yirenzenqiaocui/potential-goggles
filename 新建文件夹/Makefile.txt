@@ -1,0 +1,27 @@
+CC = g++
+CFLAGS = -g -Wall -std=c++11
+TARGET = mycgen
+OBJS = cgen.o
+
+all: $(TARGET)
+
+$(TARGET): $(OBJS)
+	$(CC) $(CFLAGS) -o $(TARGET) $(OBJS)
+
+cgen.o: cgen.cc cgen.h
+	$(CC) $(CFLAGS) -c cgen.cc
+
+clean:
+	rm -f $(TARGET) $(OBJS) *.s
+
+test: $(TARGET)
+	./$(TARGET) demo.s
+	@echo "生成的MIPS汇编代码:"
+	@cat demo.s
+
+run: test
+	@echo ""
+	@echo "运行SPIM模拟器 (需要先安装SPIM):"
+	spim -f demo.s || echo "SPIM未安装，请先安装SPIM"
+
+.PHONY: all clean test run

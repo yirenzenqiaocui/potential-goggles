@@ -1,0 +1,110 @@
+#ifndef _CGEN_H_
+#define _CGEN_H_
+
+#include <iostream>
+#include <vector>
+#include <map>
+#include <string>
+
+extern int cgen_debug;
+extern char *curr_filename;
+
+class CgenClassTable;
+class CgenNode;
+
+class Expression {
+public:
+    virtual void code(std::ostream& s) = 0;
+    virtual ~Expression() {}
+};
+
+class IntConst : public Expression {
+    int value;
+public:
+    IntConst(int v) : value(v) {}
+    void code(std::ostream& s) override;
+};
+
+class Plus : public Expression {
+    Expression *left, *right;
+public:
+    Plus(Expression *l, Expression *r) : left(l), right(r) {}
+    void code(std::ostream& s) override;
+    ~Plus() { delete left; delete right; }
+};
+
+class Minus : public Expression {
+    Expression *left, *right;
+public:
+    Minus(Expression *l, Expression *r) : left(l), right(r) {}
+    void code(std::ostream& s) override;
+    ~Minus() { delete left; delete right; }
+};
+
+class Object : public Expression {
+    std::string name;
+public:
+    Object(const std::string& n) : name(n) {}
+    void code(std::ostream& s) override;
+};
+
+class Assign : public Expression {
+    std::string name;
+    Expression *expr;
+public:
+    Assign(const std::string& n, Expression *e) : name(n), expr(e) {}
+    void code(std::ostream& s) override;
+    ~Assign() { delete expr; }
+};
+
+class OutInt : public Expression {
+    Expression *expr;
+public:
+    OutInt(Expression *e) : expr(e) {}
+    void code(std::ostream& s) override;
+    ~OutInt() { delete expr; }
+};
+
+class Block : public Expression {
+    std::vector<Expression*> expressions;
+public:
+    Block() {}
+    void add(Expression *e) { expressions.push_back(e); }
+    void code(std::ostream& s) override;
+    ~Block();
+};
+
+class CodeGenerator {
+private:
+    std::map<std::string, int> var_table;
+    int temp_offset;
+    int label_count;
+    
+public:
+    CodeGenerator();
+    
+    void generateCode(Expression *program, std::ostream& out);
+    
+    void emitPush(const std::string& reg, std::ostream& s);
+    void emitPop(const std::string& reg, std::ostream& s);
+    void emitLoad(const std::string& dest, int offset, 
+                  const std::string& src, std::ostream& s);
+    void emitStore(const std::string& src, int offset, 
+                   const std::string& dest, std::ostream& s);
+    void emitAdd(const std::string& dest, const std::string& src1, 
+                 const std::string& src2, std::ostream& s);
+    void emitSub(const std::string& dest, const std::string& src1, 
+                 const std::string& src2, std::ostream& s);
+    void emitLi(const std::string& reg, int value, std::ostream& s);
+    void emitMove(const std::string& dest, const std::string& src, std::ostream& s);
+    void emitLabel(int label, std::ostream& s);
+    void emitJump(int label, std::ostream& s);
+    void emitSyscall(std::ostream& s);
+    
+    int getVarOffset(const std::string& name);
+    void addVariable(const std::string& name);
+    
+    int newLabel();
+};
+
+#endif

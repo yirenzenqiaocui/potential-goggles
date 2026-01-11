@@ -1,0 +1,284 @@
+#include "cgen.h"
+#include <iostream>
+#include <fstream>
+#include <sstream>
+
+int cgen_debug = 0;
+char *curr_filename = nullptr;
+
+void CodeGenerator::emitPush(const std::string& reg, std::ostream& s) {
+    s << "\tsw\t" << reg << ", 0($sp)\n";
+    s << "\taddiu\t$sp, $sp, -4\n";
+}
+
+void CodeGenerator::emitPop(const std::string& reg, std::ostream& s) {
+    s << "\taddiu\t$sp, $sp, 4\n";
+    s << "\tlw\t" << reg << ", 0($sp)\n";
+}
+
+void CodeGenerator::emitLoad(const std::string& dest, int offset, 
+                            const std::string& src, std::ostream& s) {
+    s << "\tlw\t" << dest << ", " << offset << "(" << src << ")\n";
+}
+
+void CodeGenerator::emitStore(const std::string& src, int offset, 
+                             const std::string& dest, std::ostream& s) {
+    s << "\tsw\t" << src << ", " << offset << "(" << dest << ")\n";
+}
+
+void CodeGenerator::emitAdd(const std::string& dest, const std::string& src1, 
+                           const std::string& src2, std::ostream& s) {
+    s << "\tadd\t" << dest << ", " << src1 << ", " << src2 << "\n";
+}
+
+void CodeGenerator::emitSub(const std::string& dest, const std::string& src1, 
+                           const std::string& src2, std::ostream& s) {
+    s << "\tsub\t" << dest << ", " << src1 << ", " << src2 << "\n";
+}
+
+void CodeGenerator::emitLi(const std::string& reg, int value, std::ostream& s) {
+    s << "\tli\t" << reg << ", " << value << "\n";
+}
+
+void CodeGenerator::emitMove(const std::string& dest, const std::string& src, 
+                            std::ostream& s) {
+    s << "\tmove\t" << dest << ", " << src << "\n";
+}
+
+void CodeGenerator::emitLabel(int label, std::ostream& s) {
+    s << "L" << label << ":\n";
+}
+
+void CodeGenerator::emitJump(int label, std::ostream& s) {
+    s << "\tj\tL" << label << "\n";
+}
+
+void CodeGenerator::emitSyscall(std::ostream& s) {
+    s << "\tsyscall\n";
+}
+
+CodeGenerator::CodeGenerator() : temp_offset(0), label_count(0) {
+    addVariable("self");
+    addVariable("acc");
+}
+
+int CodeGenerator::getVarOffset(const std::string& name) {
+    if (var_table.find(name) != var_table.end()) {
+        return var_table[name];
+    }
+    return -1;
+}
+
+void CodeGenerator::addVariable(const std::string& name) {
+    if (var_table.find(name) == var_table.end()) {
+        var_table[name] = temp_offset;
+        temp_offset += 4;
+    }
+}
+
+int CodeGenerator::newLabel() {
+    return label_count++;
+}
+
+void IntConst::code(std::ostream& s) {
+    s << "\t# IntConst: " << value << "\n";
+    s << "\tli\t$a0, " << value << "\n";
+}
+
+void Plus::code(std::ostream& s) {
+    s << "\t# Plus expression\n";
+    left->code(s);
+    s << "\tsw\t$a0, 0($sp)\n";
+    s << "\taddiu\t$sp, $sp, -4\n";
+    right->code(s);
+    s << "\taddiu\t$sp, $sp, 4\n";
+    s << "\tlw\t$t0, 0($sp)\n";
+    s << "\tadd\t$a0, $t0, $a0\n";
+}
+
+void Minus::code(std::ostream& s) {
+    s << "\t# Minus expression\n";
+    left->code(s);
+    s << "\tsw\t$a0, 0($sp)\n";
+    s << "\taddiu\t$sp, $sp, -4\n";
+    right->code(s);
+    s << "\taddiu\t$sp, $sp, 4\n";
+    s << "\tlw\t$t0, 0($sp)\n";
+    s << "\tsub\t$a0, $t0, $a0\n";
+}
+
+void Object::code(std::ostream& s) {
+    s << "\t# Object: " << name << "\n";
+    CodeGenerator cg;
+    int offset = cg.getVarOffset(name);
+    if (offset != -1) {
+        s << "\tlw\t$a0, " << offset << "($fp)\n";
+    } else {
+        s << "\t# 变量 " << name << " 未找到\n";
+        s << "\tli\t$a0, 0\n";
+    }
+}
+
+void Assign::code(std::ostream& s) {
+    s << "\t# Assign: " << name << "\n";
+    expr->code(s);
+    CodeGenerator cg;
+    int offset = cg.getVarOffset(name);
+    if (offset != -1) {
+        s << "\tsw\t$a0, " << offset << "($fp)\n";
+    } else {
+        cg.addVariable(name);
+        offset = cg.getVarOffset(name);
+        s << "\tsw\t$a0, " << offset << "($fp)\n";
+    }
+}
+
+void OutInt::code(std::ostream& s) {
+    s << "\t# OutInt\n";
+    expr->code(s);
+    s << "\tmove\t$t0, $a0\n";
+    s << "\tli\t$v0, 1\n";
+    s << "\tmove\t$a0, $t0\n";
+    s << "\tsyscall\n";
+    s << "\tli\t$v0, 4\n";
+    s << "\tla\t$a0, newline\n";
+    s << "\tsyscall\n";
+    s << "\tmove\t$a0, $t0\n";
+}
+
+void Block::code(std::ostream& s) {
+    s << "\t# Block开始\n";
+    for (auto expr : expressions) {
+        expr->code(s);
+    }
+    s << "\t# Block结束\n";
+}
+
+Block::~Block() {
+    for (auto expr : expressions) {
+        delete expr;
+    }
+}
+
+void CodeGenerator::generateCode(Expression *program, std::ostream& out) {
+    if (cgen_debug) {
+        std::cerr << "开始生成代码...\n";
+    }
+    
+    out << "\t.data\n";
+    out << "\t.align 2\n";
+    out << "newline:\t.asciiz \"\\n\"\n";
+    out << "str_demo:\t.asciiz \"COOL代码生成器演示\\n\"\n\n";
+    
+    out << "\t.text\n";
+    out << "\t.globl main\n\n";
+    
+    out << "main:\n";
+    out << "\t# 函数序言\n";
+    out << "\taddiu\t$sp, $sp, -32\n";
+    out << "\tsw\t$ra, 28($sp)\n";
+    out << "\tsw\t$fp, 24($sp)\n";
+    out << "\tmove\t$fp, $sp\n\n";
+    
+    out << "\t# 打印演示信息\n";
+    out << "\tli\t$v0, 4\n";
+    out << "\tla\t$a0, str_demo\n";
+    out << "\tsyscall\n";
+    
+    if (program) {
+        program->code(out);
+    } else {
+        out << "\t# 默认演示：计算3+5\n";
+        out << "\tli\t$a0, 3\n";
+        out << "\tsw\t$a0, 0($sp)\n";
+        out << "\taddiu\t$sp, $sp, -4\n";
+        out << "\tli\t$a0, 5\n";
+        out << "\taddiu\t$sp, $sp, 4\n";
+        out << "\tlw\t$t0, 0($sp)\n";
+        out << "\tadd\t$a0, $t0, $a0\n";
+        
+        out << "\t# 打印结果\n";
+        out << "\tmove\t$t0, $a0\n";
+        out << "\tli\t$v0, 1\n";
+        out << "\tmove\t$a0, $t0\n";
+        out << "\tsyscall\n";
+        out << "\tli\t$v0, 4\n";
+        out << "\tla\t$a0, newline\n";
+        out << "\tsyscall\n";
+        out << "\tmove\t$a0, $t0\n";
+    }
+    
+    out << "\n\t# 函数收尾\n";
+    out << "\tlw\t$ra, 28($sp)\n";
+    out << "\tlw\t$fp, 24($sp)\n";
+    out << "\taddiu\t$sp, $sp, 32\n";
+    out << "\tli\t$v0, 10\n";
+    out << "\tsyscall\n";
+    
+    if (cgen_debug) {
+        std::cerr << "代码生成完成\n";
+    }
+}
+
+Expression* parseSimpleCOOL(const std::string& input) {
+    Block *block = new Block();
+    Expression *three = new IntConst(3);
+    Expression *five = new IntConst(5);
+    Expression *plus = new Plus(three, five);
+    Expression *out = new OutInt(plus);
+    block->add(out);
+    return block;
+}
+
+int main(int argc, char *argv[]) {
+    if (argc < 2) {
+        std::cerr << "用法: " << argv[0] << " <输出文件> [COOL源文件]\n";
+        return 1;
+    }
+    
+    std::string output_file = argv[1];
+    std::ofstream out(output_file);
+    if (!out) {
+        std::cerr << "无法打开输出文件: " << output_file << "\n";
+        return 1;
+    }
+    
+    Expression *program = nullptr;
+    
+    if (argc >= 3) {
+        std::ifstream input(argv[2]);
+        if (input) {
+            std::stringstream buffer;
+            buffer << input.rdbuf();
+            program = parseSimpleCOOL(buffer.str());
+        }
+    }
+    
+    if (!program) {
+        Block *block = new Block();
+        Expression *three = new IntConst(3);
+        Expression *five = new IntConst(5);
+        Expression *plus = new Plus(three, five);
+        Expression *out = new OutInt(plus);
+        block->add(out);
+        
+        Expression *ten = new IntConst(10);
+        Expression *two = new IntConst(2);
+        Expression *minus = new Minus(ten, two);
+        Expression *out2 = new OutInt(minus);
+        block->add(out2);
+        
+        program = block;
+    }
+    
+    CodeGenerator generator;
+    generator.generateCode(program, out);
+    
+    delete program;
+    out.close();
+    
+    std::cout << "MIPS汇编代码已生成到: " << output_file << "\n";
+    std::cout << "可以使用SPIM运行: spim -f " << output_file << "\n";
+    
+    return 0;
+}

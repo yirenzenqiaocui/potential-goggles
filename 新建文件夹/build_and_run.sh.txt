@@ -1,0 +1,77 @@
+#!/bin/bash
+
+echo "=== 构建和运行简化的COOL代码生成器 ==="
+echo ""
+
+make clean
+
+echo "2. 编译代码生成器..."
+make
+
+if [ $? -eq 0 ]; then
+    echo "✅ 编译成功"
+else
+    echo "❌ 编译失败"
+    exit 1
+fi
+
+echo "3. 生成测试程序..."
+cat > test.cl << 'EOF'
+class Main {
+    main() : Object {
+        {
+            out_int(3 + 5);
+            out_int(10 - 2);
+        }
+    };
+};
+EOF
+
+echo "✅ 测试程序已创建: test.cl"
+
+echo "4. 运行代码生成器生成MIPS汇编..."
+./mycgen demo.s test.cl
+
+if [ $? -eq 0 ]; then
+    echo "✅ MIPS汇编代码已生成: demo.s"
+else
+    echo "❌ 代码生成失败"
+    exit 1
+fi
+
+echo ""
+echo "5. 生成的MIPS汇编代码预览:"
+echo "========================================"
+head -30 demo.s
+echo "..."
+tail -10 demo.s
+echo "========================================"
+
+echo ""
+echo "6. 检查SPIM模拟器..."
+if command -v spim > /dev/null 2>&1; then
+    echo "✅ 找到SPIM模拟器"
+    echo ""
+    echo "7. 运行SPIM模拟器:"
+    echo "----------------------------------------"
+    spim -f demo.s
+    echo "----------------------------------------"
+elif command -v qtspim > /dev/null 2>&1; then
+    echo "✅ 找到QTSPIM模拟器"
+    echo ""
+    echo "7. 运行QTSPIM模拟器 (图形界面)..."
+    qtspim demo.s &
+else
+    echo "⚠️  SPIM未安装，但汇编代码已生成"
+    echo ""
+    echo "安装SPIM的方法:"
+    echo "  Ubuntu/Debian: sudo apt install spim"
+    echo "  macOS: brew install spim"
+    echo "  Windows: 下载 http://spimsimulator.sourceforge.net/"
+    echo ""
+    echo "或者使用在线SPIM模拟器:"
+    echo "  https://www.cs.ucsb.edu/~pconrad/cs64/tools/spim/"
+fi
+
+echo ""
+echo "=== 演示完成 ==="
